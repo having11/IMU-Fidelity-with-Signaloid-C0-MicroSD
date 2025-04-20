@@ -22,10 +22,21 @@ import argparse
 import sys
 import struct
 import signal
+from dataclasses import dataclass
+import csv
 import matplotlib.pyplot as plt
 from c0microsd.interface import C0microSDSignaloidSoCInterface
 from signaloid.distributional import DistributionalValue
 from signaloid.distributional_information_plotting.plot_wrapper import plot
+
+@dataclass
+class AccelerometerValues:
+  averaged_x: float
+  averaged_y: float
+  averaged_z: float
+  weighted_mean_x: float
+  weighted_mean_y: float
+  weighted_mean_z: float
 
 kSignaloidC0StatusWaitingForCommand = 0
 kSignaloidC0StatusCalculating = 1
@@ -119,6 +130,110 @@ def parse_csv(csv_path: str) -> list[tuple[float, float, float]]:
                 z = float(row[2])
                 data.append((x, y, z))
     return data
+  
+def compute_weighted_means(data: list[tuple[float, float, float]], window_size: int) -> list[AccelerometerValues]:
+  """
+  Computes weighted means for each axis from accelerometer CSV data.
+  For each axis (X, Y, Z), it splits the samples into groups based on
+  sliding window starting offsets 0 to window_size - 1. In each group, the
+  weighted mean is computed with weights 1, 2, …, n (where n is the number
+  of samples in that group). All groups are formed based on every sample at
+  indices offset, offset+window_size, offset+2*window_size, etc.
+  Note: If groups end up having different lengths, they are processed separately;
+  the design assumes there are enough samples to form complete groups.
+  
+  Returns a flat list with the weighted means for X first, then Y, then Z.
+  """
+  if not data:
+    return []
+  
+  # Separate the axes
+  xs = [x for (x, _, _) in data]
+  ys = [y for (_, y, _) in data]
+  zs = [z for (_, _, z) in data]
+  
+  def compute_axis_weighted_means(axis_data: list[float], axis: str) -> list[float]:
+    """
+    Computes the weighted means for a single axis.
+    """
+    
+    weighted = []
+    
+    sliding_window_start = 0
+    sliding_window_end = window_size
+    
+    while sliding_window_end < len(axis_data):
+      # Pack and send the windowed values to the device; record response from device
+      windowed_values = axis_data[sliding_window_start:sliding_window_end]
+      print("Sending parameters to C0-microSD...")
+
+      C0_microSD.write_signaloid_soc_MOSI_buffer(
+          pack_floats(
+              windowed_values,
+              C0_microSD.MOSI_BUFFER_SIZE_BYTES,
+          )
+      )
+
+      # Calculate result
+      result_buffer = C0_microSD.calculate_command(
+          calculation_commands[args.command])
+
+      # Interpret and remove the first 4 bytes as a float
+      returned_weighted_mean = struct.unpack("f", result_buffer[:4])[0]
+    
+      # Append weighted mean to array for the axis currently being processed
+      print(f"Received weighted mean: {returned_weighted_mean} for {axis} axis")
+      
+      weighted.append(returned_weighted_mean)
+      
+      sliding_window_start += 1
+      sliding_window_end += 1
+      
+    return weighted
+  
+  def compute_axis_means(axis_data: list[float], axis: str) -> list[float]:
+    """
+    Computes the simple average for a given axis using a sliding window.
+    """
+    means = []
+    start = 0
+    while start + window_size <= len(axis_data):
+      window = axis_data[start:start + window_size]
+      avg = sum(window) / window_size
+      print(f"Calculated average: {avg} for {axis} axis over window starting at index {start}")
+      means.append(avg)
+      start += 1
+    return means
+
+  average_x = compute_axis_means(xs, 'X')
+  average_y = compute_axis_means(ys, 'Y')
+  average_z = compute_axis_means(zs, 'Z')
+
+  weighted_x = compute_axis_weighted_means(xs, 'X')
+  weighted_y = compute_axis_weighted_means(ys, 'Y')
+  weighted_z = compute_axis_weighted_means(zs, 'Z')
+  
+  n = min(
+    len(average_x),
+    len(average_y),
+    len(average_z),
+    len(weighted_x),
+    len(weighted_y),
+    len(weighted_z)
+  )
+  accelerometer_results = []
+  for i in range(n):
+    accelerometer_results.append(
+      AccelerometerValues(
+        averaged_x=average_x[i],
+        averaged_y=average_y[i],
+        averaged_z=average_z[i],
+        weighted_mean_x=weighted_x[i],
+        weighted_mean_y=weighted_y[i],
+        weighted_mean_z=weighted_z[i]
+      )
+    )
+  return accelerometer_results
 
 def parse_arguments():
     # Create the top-level parser
@@ -177,30 +292,58 @@ if __name__ == "__main__":
             raw_values = parse_csv(args.csv_path)
             print(f"Read {len(raw_values)} rows from CSV file.")
             
-            # TODO: Calculate the weighted means for each axis by creating a sliding window of size
-            # Ensure that every window contains the same number of samples, so start the sliding window between 0 and window_size exclusive
+            values = compute_weighted_means(raw_values, args.window_size)
+            print("Weighted means calculation completed successfully.")
             
-            # TODO: Pack and send the windowed values to the device; record response from device
-          
-            # Parse inputs
-            print("Sending parameters to C0-microSD...")
+            # Re-read the full CSV to obtain gyroscope and magnetometer values.
+            full_rows = []
+            with open(args.csv_path, newline="") as csvfile:
+              reader = csv.reader(csvfile)
+              for row in reader:
+                # Expecting at least 9 columns: accelerometer (0-2), gyroscope (3-5), magnetometer (6-8)
+                if len(row) >= 9:
+                  full_rows.append(row)
 
-            C0_microSD.write_signaloid_soc_MOSI_buffer(
-                pack_floats(
-                    windowed_values,
-                    C0_microSD.MOSI_BUFFER_SIZE_BYTES,
-                )
-            )
+            # Determine the output CSV file name
+            output_csv = "output_results.csv"
 
-            # Calculate result
-            result_buffer = C0_microSD.calculate_command(
-                calculation_commands[args.command])
+            # Open the output CSV and write header and rows.
+            with open(output_csv, "w", newline="") as csvfile:
+              writer = csv.writer(csvfile)
+              # Write header: accelerometer averages and weighted means, plus gyroscope and magnetometer values.
+              writer.writerow([
+                "averaged_x", "averaged_y", "averaged_z",
+                "weighted_mean_x", "weighted_mean_y", "weighted_mean_z",
+                "gyro_x", "gyro_y", "gyro_z",
+                "mag_x", "mag_y", "mag_z"
+              ])
 
-            # Interpret and remove the first 4 bytes as a float
-            returned_weighted_mean = struct.unpack("f", result_buffer[:4])[0]
+              # Number of computed entries from sliding window equals:
+              # len(full_rows) - window_size + 1; computed values in 'values' follow the same count.
+              # For each computed window result, use the middle row of the window to extract gyroscope and magnetometer values.
+              for i, result in enumerate(values):
+                mid_index = i + args.window_size // 2
+                if mid_index < len(full_rows):
+                  try:
+                    gyro_x = float(full_rows[mid_index][3])
+                    gyro_y = float(full_rows[mid_index][4])
+                    gyro_z = float(full_rows[mid_index][5])
+                    mag_x  = float(full_rows[mid_index][6])
+                    mag_y  = float(full_rows[mid_index][7])
+                    mag_z  = float(full_rows[mid_index][8])
+                  except ValueError as ve:
+                    print(f"Skipping row {mid_index} due to conversion error: {ve}")
+                    continue
+
+                  writer.writerow([
+                    result.averaged_x, result.averaged_y, result.averaged_z,
+                    result.weighted_mean_x, result.weighted_mean_y, result.weighted_mean_z,
+                    gyro_x, gyro_y, gyro_z,
+                    mag_x, mag_y, mag_z
+                  ])
+                else:
+                  print(f"Warning: Not enough CSV rows to map window index {i}.")
             
-            # TODO: Append weighted mean to array for the axis currently being processed
-            print(f"Received weighted mean: {returned_weighted_mean}")
     except Exception as e:
         print(
             f"An error occurred while calculating: \n{e} \nAborting.",
