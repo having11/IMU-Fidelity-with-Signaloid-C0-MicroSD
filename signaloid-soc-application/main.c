@@ -1,15 +1,46 @@
 #include <uxhw.h>
+#include <math.h>
 #include "C0microSDConstants.h"
+
+/**
+ * Input data in the buffer:
+ * 0 - uint32_t -> number of samples
+ * 4 - float * -> start of sample 0 to sample N
+ * 
+ * Output data in the buffer:
+ * 0 - float -> weighted mean of samples
+ */
 
 typedef enum
 {
 	kCalculateNoCommand		= 0, /* Go to idle */
-	kCalculateAddition		= 1, /* Calculate addition */
-	kCalculateSubtraction		= 2, /* Calculate Subtraction */
-	kCalculateMultiplication	= 3, /* Calculate Multiplication */
-	kCalculateDivision		= 4, /* Calculate Division */
-	kCalculateSample		= 5, /* Calculate Sample */
+	kCalculateWindow     = 1, /* Calculate window */
 } SignaloidSoCCommand;
+
+static float getWeightedMean(float * values, size_t count)
+{
+  float dist = UxHwFloatDistFromSamples(values, count);
+  float variance = UxHwFloatNthMoment(dist, 2);
+  float mean = UxHwFloatNthMoment(dist, 1);
+
+  WeightedFloatSample *weightedSamples = (WeightedFloatSample *)checkedCalloc(count, sizeof(WeightedFloatSample), __FILE__, __LINE__);
+
+  for (size_t i = 0; i < count; i++) {
+    float weight = 1.0f;
+    if (variance > 0.0f) {
+      float diff = values[i] - mean;
+      weight = expf(-(diff * diff) / (2.0f * variance));
+    }
+
+    weightedSamples[i] = {.sample = values[i], .sampleWeight = weight};
+  }
+
+  float weightedMean = UxHwFloatDistFromWeightedSamples(weightedSamples, count);
+
+  free(weightedSamples);
+
+  return weightedMean;
+}
 
 int
 main(void)
@@ -24,38 +55,6 @@ main(void)
 	volatile double *		MISOBuffer		= (double *) kSignaloidSoCDeviceConstantsMISOBufferAddress;
 	volatile uint32_t *		resultBufferSize	= (uint32_t *) kSignaloidSoCDeviceConstantsMISOBufferAddress;
 	volatile uint8_t *		resultBuffer		= (uint8_t *) (kSignaloidSoCDeviceConstantsMISOBufferAddress + sizeof(uint32_t));
-
-	double				argument1;	
-	double				argument2;
-
-	uint32_t			resultSize;
-	double				result;
-
-	/*
-	 *	Generate a distribution from weighted samples from a Gaussian distribution
-	 *	with mean value zero and standard deviation equal to one.
-	 */
-	WeightedDoubleSample	weightedSamples[16] =
-					{
-						{.sample = -2.2194097942437231, .sampleWeight = 0.0339789420851602},
-						{.sample = -1.5678879053053274, .sampleWeight = 0.0520280112620429},
-						{.sample = -1.1997100902860450, .sampleWeight = 0.0601091352703015},
-						{.sample = -0.9205473016275229, .sampleWeight = 0.0663526532241763},
-						{.sample = -0.6859608829556935, .sampleWeight = 0.0686569819948156},
-						{.sample = -0.4772650338604341, .sampleWeight = 0.0714941307381180},
-						{.sample = -0.2817093825097764, .sampleWeight = 0.0732557829230397},
-						{.sample = -0.0931705533484249, .sampleWeight = 0.0741243625023456},
-						{.sample =  0.0931705533484249, .sampleWeight = 0.0741243625023456},
-						{.sample =  0.2817093825097764, .sampleWeight = 0.0732557829230397},
-						{.sample =  0.4772650338604341, .sampleWeight = 0.0714941307381180},
-						{.sample =  0.6859608829556935, .sampleWeight = 0.0686569819948156},
-						{.sample =  0.9205473016275229, .sampleWeight = 0.0663526532241763},
-						{.sample =  1.1997100902860450, .sampleWeight = 0.0601091352703015},
-						{.sample =  1.5678879053053274, .sampleWeight = 0.0520280112620429},
-						{.sample =  2.2194097942437231, .sampleWeight = 0.0339789420851602},
-					};
-
-	double generatedDistribution;
 
 	while (1)
 	{
@@ -78,47 +77,37 @@ main(void)
 		 *	Turn on status LED
 		 */
 		*mmioSoCControl = 0xffffffff;
+    float resultSize = sizeof(float);
+
 		switch (*mmioCommand)
 		{	
 			/*
 			 *	All of the following commands parse the inputs in the same way
 			 */
-			case kCalculateAddition:
-			case kCalculateSubtraction:
-			case kCalculateMultiplication:
-			case kCalculateDivision:
+			case kCalculateWindow:
 
-				/*
-				 *	Parse inputs
-				 */
-				argument1 = UxHwDoubleUniformDist(MOSIBuffer[0], MOSIBuffer[1]);
-				argument2 = UxHwDoubleUniformDist(MOSIBuffer[2], MOSIBuffer[3]);
+        // First argument is the number of samples in the distribution
+        uint16_t numSamples = MOSIBufferUInt[0];
 
 				/*
 				 *	Calculate
 				 */
 				switch (*mmioCommand)
 				{
-					case kCalculateAddition:
-						result = argument1 + argument2;
-						break;
-					case kCalculateSubtraction:
-						result = argument1 - argument2;
-						break;
-					case kCalculateMultiplication:
-						result = argument1 * argument2;
-						break;
-					case kCalculateDivision:
-						result = argument1 / argument2;
-						break;
+          case kCalculateWindow:
+            /*
+             *	Calculate window's weighted mean natively
+             */
+            float result = getWeightedMean((MOSIBuffer + sizeof(uint32_t)), numSamples);
+            // Copy the result to the MISO buffer
+            MISOBuffer[0] = result;
+            break;
 					default:
 						break;
 				}
 
-				/*
-				 *	Pack result
-				 */
-				resultSize = UxHwDoubleDistributionToByteArray(result, resultBuffer, kSignaloidSoCCommonConstantsMISOBufferSizeBytes - sizeof(uint32_t));
+				// TODO: Does this function even exist?
+				// resultSize = UxHwFloatDistributionToByteArray(result, resultBuffer, kSignaloidSoCCommonConstantsMISOBufferSizeBytes - sizeof(uint32_t));
 				*resultBufferSize = resultSize;
 
 				/*
@@ -126,15 +115,7 @@ main(void)
 				 */
 				*mmioStatus = kSignaloidSoCStatusDone;
 				break;
-			case kCalculateSample:
-				generatedDistribution = UxHwDoubleDistFromWeightedSamples(weightedSamples, 16, 16);
-				UxHwDoubleSampleBatch(generatedDistribution, MISOBuffer, MOSIBufferUInt[0]);
 
-				/*
-				 *	Set status
-				 */
-				*mmioStatus = kSignaloidSoCStatusDone;
-				break;
 			default:
 				*mmioStatus = kSignaloidSoCStatusInvalidCommand;
 				break;
