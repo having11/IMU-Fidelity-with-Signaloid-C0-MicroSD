@@ -1,3 +1,6 @@
+[<img src="https://assets.signaloid.io/add-to-signaloid-cloud-logo-dark-v6.svg#gh-dark-mode-only" alt="[Add to signaloid.io]" height="30">](https://signaloid.io/repositories?connect=https://github.com/having11/IMU-Fidelity-with-Signaloid-C0-MicroSD#gh-dark-mode-only)
+[<img src="https://assets.signaloid.io/add-to-signaloid-cloud-logo-light-v6.svg#gh-light-mode-only" alt="[Add to signaloid.io]" height="30">](https://signaloid.io/repositories?connect=https://github.com/having11/IMU-Fidelity-with-Signaloid-C0-MicroSD#gh-light-mode-only)
+
 # Signaloid-C0-microSD-Demo-Calculator
 This demo application for the C0-microSD supports the following operations:
 
