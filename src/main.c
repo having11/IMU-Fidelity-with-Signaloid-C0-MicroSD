@@ -1,5 +1,6 @@
 #include <uxhw.h>
 #include <math.h>
+#include <stdlib.h>
 #include "C0microSDConstants.h"
 
 /**
@@ -77,7 +78,7 @@ main(void)
 		 *	Turn on status LED
 		 */
 		*mmioSoCControl = 0xffffffff;
-    float resultSize = sizeof(float);
+    uint32_t resultSize = sizeof(float);
 
 		switch (*mmioCommand)
 		{	
