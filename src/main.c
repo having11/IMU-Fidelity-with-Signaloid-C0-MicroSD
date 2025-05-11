@@ -24,7 +24,7 @@ static float getWeightedMean(float * values, size_t count)
   float variance = UxHwFloatNthMoment(dist, 2);
   float mean = UxHwFloatNthMoment(dist, 1);
 
-  WeightedFloatSample *weightedSamples = (WeightedFloatSample *)checkedCalloc(count, sizeof(WeightedFloatSample), __FILE__, __LINE__);
+  WeightedFloatSample *weightedSamples = (WeightedFloatSample *)malloc(count, sizeof(WeightedFloatSample), __FILE__, __LINE__);
 
   for (size_t i = 0; i < count; i++) {
     float weight = 1.0f;
@@ -33,7 +33,7 @@ static float getWeightedMean(float * values, size_t count)
       weight = expf(-(diff * diff) / (2.0f * variance));
     }
 
-    weightedSamples[i] = {.sample = values[i], .sampleWeight = weight};
+    weightedSamples[i] = (WeightedFloatSample){.sample = values[i], .sampleWeight = weight};
   }
 
   float weightedMean = UxHwFloatDistFromWeightedSamples(weightedSamples, count);
@@ -88,7 +88,7 @@ main(void)
 			case kCalculateWindow:
 
         // First argument is the number of samples in the distribution
-        uint16_t numSamples = MOSIBufferUInt[0];
+        uint16_t numSamples = (uint16_t)MOSIBufferUInt[0];
 
 				/*
 				 *	Calculate
@@ -99,9 +99,9 @@ main(void)
             /*
              *	Calculate window's weighted mean natively
              */
-            float result = getWeightedMean((MOSIBuffer + sizeof(uint32_t)), numSamples);
+            float result = getWeightedMean((float *)((uint8_t *)MOSIBuffer + sizeof(uint32_t)), numSamples);
             // Copy the result to the MISO buffer
-            MISOBuffer[0] = result;
+            MOSIBuffer[0] = result;
             break;
 					default:
 						break;
