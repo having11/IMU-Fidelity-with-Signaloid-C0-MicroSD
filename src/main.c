@@ -1,6 +1,7 @@
 #include <uxhw.h>
 #include <math.h>
 #include <stdlib.h>
+#include <string.h>
 #include "C0microSDConstants.h"
 
 /**
@@ -101,7 +102,7 @@ int main(void)
       *mmioSoCControl = 0xffffffff;
       result = getWeightedMean((float *)((uint8_t *)MOSIBuffer + sizeof(float)), numSamples);
       // Copy the result to the MISO buffer
-      resultBuffer[0] = result;
+      memcpy(resultBuffer, &result, sizeof(float));
 
       // resultSize = UxHwFloatDistributionToByteArray(result, resultBuffer, kSignaloidSoCCommonConstantsMISOBufferSizeBytes - sizeof(uint32_t));
       *resultBufferSize = sizeof(float);
