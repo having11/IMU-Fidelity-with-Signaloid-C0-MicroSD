@@ -167,10 +167,12 @@ def compute_weighted_means(data: list[tuple[float, float, float]], window_size: 
         sliding_window_start = 0
         sliding_window_end = window_size
 
+        print("len(axis_data)=", len(axis_data))
+
         while sliding_window_end < len(axis_data):
             # Pack and send the windowed values to the device; record response from device
             windowed_values = axis_data[sliding_window_start:sliding_window_end]
-            print("Sending parameters to C0-microSD...")
+            print("Sending parameters to C0-microSD...", windowed_values)
 
             C0_microSD.write_signaloid_soc_MOSI_buffer(
                 pack_floats(
@@ -185,10 +187,10 @@ def compute_weighted_means(data: list[tuple[float, float, float]], window_size: 
             result_buffer = C0_microSD.calculate_command(
                 calculation_commands[args.command])
             
-            print("Received result from C0-microSD", result_buffer)
+            print("Received result from C0-microSD. result_buffer[:4]=", result_buffer[4:8])
 
             # Interpret and remove the first 4 bytes as a float
-            returned_weighted_mean = struct.unpack("f", result_buffer[:4])[0]
+            returned_weighted_mean = struct.unpack("f", result_buffer[4:8])[0]
 
             # Append weighted mean to array for the axis currently being processed
             print(
@@ -198,6 +200,8 @@ def compute_weighted_means(data: list[tuple[float, float, float]], window_size: 
 
             sliding_window_start += 1
             sliding_window_end += 1
+
+            print("Sliding window end=", sliding_window_end)
 
         return weighted
 
