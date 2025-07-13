@@ -6,10 +6,10 @@
 
 /**
  * Input data in the buffer:
- * 0 - uint32_t -> number of samples
+ * 0 - float -> number of samples
  * 4 - float * -> start of sample 0 to sample N
  *
- * Output data in the buffer:
+ * Output data in the results buffer:
  * 0 - float -> weighted mean of samples
  */
 
