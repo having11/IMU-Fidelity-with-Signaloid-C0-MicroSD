@@ -104,7 +104,6 @@ int main(void)
       // Copy the result to the MISO buffer
       memcpy(resultBuffer, &result, sizeof(float));
 
-      // resultSize = UxHwFloatDistributionToByteArray(result, resultBuffer, kSignaloidSoCCommonConstantsMISOBufferSizeBytes - sizeof(uint32_t));
       *resultBufferSize = sizeof(float);
 
       /*
