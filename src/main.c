@@ -51,10 +51,10 @@ int main(void)
   volatile uint32_t *mmioSoCControl = (uint32_t *)kSignaloidSoCDeviceConstantsSoCControlAddress;
   volatile SignaloidSoCCommand *mmioCommand = (SignaloidSoCCommand *)kSignaloidSoCDeviceConstantsCommandAddress;
 
-  volatile double *MOSIBuffer = (double *)kSignaloidSoCDeviceConstantsMOSIBufferAddress;
+  volatile float *MOSIBuffer = (float *)kSignaloidSoCDeviceConstantsMOSIBufferAddress;
   volatile uint32_t *MOSIBufferUInt = (uint32_t *)kSignaloidSoCDeviceConstantsMOSIBufferAddress;
 
-  volatile double *MISOBuffer = (double *)kSignaloidSoCDeviceConstantsMISOBufferAddress;
+  volatile float *MISOBuffer = (float *)kSignaloidSoCDeviceConstantsMISOBufferAddress;
   volatile uint32_t *resultBufferSize = (uint32_t *)kSignaloidSoCDeviceConstantsMISOBufferAddress;
   volatile uint8_t *resultBuffer = (uint8_t *)(kSignaloidSoCDeviceConstantsMISOBufferAddress + sizeof(uint32_t));
 
@@ -80,8 +80,6 @@ int main(void)
     /*
      *	Turn on status LED
      */
-    *mmioSoCControl = 0xffffffff;
-    uint32_t resultSize = sizeof(float);
     float result;
 
     switch (*mmioCommand)
@@ -92,28 +90,26 @@ int main(void)
     case kCalculateWindow:
     {
       // First argument is the number of samples in the distribution
-      uint16_t numSamples = (uint16_t)MOSIBufferUInt[0];
+      uint32_t numSamples = (uint32_t)MOSIBuffer[0];
 
       /*
        *	Calculate
        */
-      switch (*mmioCommand)
-      {
-      case kCalculateWindow:
-        /*
-         *	Calculate window's weighted mean natively
-         */
-        result = getWeightedMean((float *)((uint8_t *)MOSIBuffer + sizeof(uint32_t)), numSamples);
-        // Copy the result to the MISO buffer
-        MOSIBuffer[0] = result;
-        break;
-      default:
-        break;
-      }
+      /*
+       *	Calculate window's weighted mean natively
+       */
+      *mmioSoCControl = 0xffffffff;
+      result = getWeightedMean((float *)((uint8_t *)MOSIBuffer + sizeof(float)), numSamples);
+      // Copy the result to the MISO buffer
+      resultBuffer[0] = result;
 
-      // TODO: Does this function even exist?
       // resultSize = UxHwFloatDistributionToByteArray(result, resultBuffer, kSignaloidSoCCommonConstantsMISOBufferSizeBytes - sizeof(uint32_t));
-      *resultBufferSize = resultSize;
+      *resultBufferSize = sizeof(float);
+
+      /*
+       *	Turn off status LED
+       */
+      *mmioSoCControl = 0x00000000;
 
       /*
        *	Set status
@@ -126,11 +122,6 @@ int main(void)
       *mmioStatus = kSignaloidSoCStatusInvalidCommand;
       break;
     }
-
-    /*
-     *	Turn off status LED
-     */
-    *mmioSoCControl = 0x00000000;
 
     /*
      *	Block until command is cleared

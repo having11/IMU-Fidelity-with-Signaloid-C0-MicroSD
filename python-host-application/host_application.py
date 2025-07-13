@@ -26,8 +26,6 @@ from dataclasses import dataclass
 import csv
 import matplotlib.pyplot as plt
 from c0microsd.interface import C0microSDSignaloidSoCInterface
-from signaloid.distributional import DistributionalValue
-from signaloid.distributional_information_plotting.plot_wrapper import plot
 
 
 @dataclass
@@ -69,8 +67,8 @@ def pack_floats(floats: list, size: int) -> bytes:
 
     :return: The padded bytes buffer
     """
-    # Pack the number of floats as a uint32_t at the beginning
-    buffer = struct.pack("<I", len(floats))
+    # Pack the number of floats as a float at the beginning
+    buffer = struct.pack("<f", float(len(floats)))
     # Pack the floats (each as a 4-byte float)
     buffer += struct.pack(f"<{len(floats)}f", *floats)
 
@@ -180,10 +178,14 @@ def compute_weighted_means(data: list[tuple[float, float, float]], window_size: 
                     C0_microSD.MOSI_BUFFER_SIZE_BYTES,
                 )
             )
+            
+            print("Sent values to C0-microSD, waiting for result...")
 
             # Calculate result
             result_buffer = C0_microSD.calculate_command(
                 calculation_commands[args.command])
+            
+            print("Received result from C0-microSD", result_buffer)
 
             # Interpret and remove the first 4 bytes as a float
             returned_weighted_mean = struct.unpack("f", result_buffer[:4])[0]
