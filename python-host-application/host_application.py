@@ -1,3 +1,6 @@
+# Code derived from Signaloid's C0-microSD calculator example:
+# https://github.com/signaloid/Signaloid-C0-microSD-Demo-Calculator
+
 #   Copyright (c) 2024, Signaloid.
 #
 #   Permission is hereby granted, free of charge, to any person obtaining a
